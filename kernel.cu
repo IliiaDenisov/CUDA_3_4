@@ -8,7 +8,7 @@
 #include <vector>
 #include "device_launch_parameters.h"
 
-// Время выполнения на CPU: 23 ms
+// Время выполнения на CPU: 624 ms
 // Время выполнения на CUDA простого алгоритма euler_simple: 16.9289 ms
 // Время выполнения на CUDA более сложного алгоритма euler_shared: 25.2861 ms
 
@@ -29,28 +29,26 @@ __global__ void euler_simple(float* a, float* result, float y0, float h) {
     }
 }
 
-__global__ void euler_shared(float* a, float* result, float y0, float h) {
+__global__ void euler_complex(float* a, float* result, float y0, float h) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N) return;
-
-    float a_ = a[i];                             // +1
-    float x = 0.0f;                              // +1
-    float y = y0;                                // +1
-    for (int j = 0; j < M; j++) {                // +2 * M
-        y += h * sinf((x + y) / a_);             // +~30 * M       
-        x += h;                                  // +M
-        result[i * M + j] = y;                   // +3*M + M * (запись в память)
+                                                 // Arithmetic oper-s  | Memory oper-s   
+    float a_ = a[i];                             // 1                  |
+    float x = 0.0f;                              // 1                  |
+    float y = y0;                                // 1                  |
+    for (int j = 0; j < M; j++) {                // 2 * M              |
+        y += h * sin((x + y) / a_);              // ~30 * M            |
+        x += h;                                  // M                  |
+        result[i * M + j] = y;                   // 3*M                | + M 
     }
-                                                 // Итого: 3 + M * (36 + запись в память)
-                                                 // euler_shared бе взываема 5120-жды. 
-                                                 // Абие же сотворим число общее : 5120 * (3 + M * (36 + запись в память)) ~ 2^10 * 5 * 2^10 * 5 * 36 = 943 718 400
-                                                 // Имамы бо число другое терафлопсовое для RTX 2060: 6.5 * 10^12
-                                                 // Время бе: 943 718 400 / (6.5 * 10^12) = 1.45 * 10^-4 = 0.000145 секунд = 0.15 ms 
-                                                 // Помянухом к тому, братие, такожде и память: 5120 * M * (запись в память) = 25.6 * 10^6 * (запись в память)
-                                                 // Егда имамы запись в память ~100 флопс, дадеся нам число велие: (25.6 * 10^6 * 100) / (6.5 * 10^12) = 3.93 * 10^-4 = 0.000393 секунд = 0.393 ms 
-                                                    
-                                                 // Купно же: 0.393 ms + 0.15 ms ~ 0.55ms
-        
+                                                 // euler_shared is called N (5120) times. 
+                                                 // Time_res = max(Time_mem, Time_operations)
+                                                 // Time_operations = N * (3 + 36 * M) / FLOPS = 1.4178e-4 sec = 0.000014178 sec = 0.14178 ms
+                                                 // Time_memory = (N * M * 4) / MemoryBandwidth = (102 * 10^6) / ((2 * clockRate * BusWidth) / 8) = 
+                                                 // =  (102 * 10^6) / ((2 * 7 * 10^3 * 10^6 * 192) / 8) = 3.047e-4 = 0.3047 ms
+                                                 // Time_res = max(0.14178 ms, 0.3047 m) = 0.3047 ms
+                                                 // therefore, ideal time is 0.3047 ms
+                                                 // test time is: 25.2861 ms
 }
 
 void checkCorrectness(const std::vector<float>& a, const std::vector<float>& result_cpu, const std::vector<float>& result_gpu) {
@@ -124,7 +122,7 @@ int main() {
     checkCorrectness(a, result_cpu, result_gpu);
 
     cudaEventRecord(startCUDA, 0);
-    euler_shared << <grid, block >> > (d_a, d_result, y0, h);
+    euler_complex << <grid, block >> > (d_a, d_result, y0, h);
     cudaMemcpy(result_gpu.data(), d_result, N * M * sizeof(float), cudaMemcpyDeviceToHost);
     cudaEventRecord(stopCUDA, 0);
     cudaEventSynchronize(stopCUDA);
