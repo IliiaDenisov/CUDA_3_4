@@ -9,12 +9,12 @@
 #include "device_launch_parameters.h"
 
 // Время выполнения на CPU: 624 ms
-// Время выполнения на CUDA простого алгоритма euler_simple: 8.73613 ms
-// Время выполнения на CUDA более сложного алгоритма euler_shared: 8.47053
+// Время выполнения на CUDA простого алгоритма euler_simple: 3.4304 ms
+// Время выполнения на CUDA более сложного алгоритма euler_shared: 2.9768 ms
 
 #define N 5120          // Количество строк (размер массива параметра a)
 #define M 5000          // Количество шагов метода Эйлера
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 8
 
 __global__ void euler_simple(float* a, float* result, float y0, float h) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -33,23 +33,23 @@ __global__ void euler_complex(float* a, float* result, float y0, float h) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N) return;
 
-                                                 // Arithmetic oper-s  | Memory oper-s   
-    float a_ = a[i];                             // 1                  |
-    float x = 0.0f;                              // 1                  |
-    float y = y0;                                // 1                  |
-    for (int j = 0; j < M; j++) {                // 2 * M              |
-        y += h * __sinf((x + y) / a_);           // ~30 * M            |
-        x += h;                                  // M                  |
-        result[i * M + j] = y;                   // 3*M                | + M 
-    }
-                                                 // euler_shared is called N (5120) times. 
-                                                 // Time_res = max(Time_mem, Time_operations)
-                                                 // Time_operations = N * (3 + 36 * M) / FLOPS = 1.4178e-4 sec = 0.000014178 sec = 0.14178 ms
-                                                 // Time_memory = (N * M * 4) / MemoryBandwidth = (102 * 10^6) / ((2 * clockRate * BusWidth) / 8) = 
-                                                 // =  (102 * 10^6) / ((2 * 7 * 10^3 * 10^6 * 192) / 8) = 3.047e-4 = 0.3047 ms
-                                                 // Time_res = max(0.14178 ms, 0.3047 m) = 0.3047 ms
-                                                 // therefore, ideal time is 0.3047 ms
-                                                 // test time is: 8.47053
+                                                   // Arithmetic oper-s  | Memory oper-s   
+    float a_ = a[i];                               // 1                  |
+    float x = 0.0f;                                // 1                  |
+    float y = y0;                                  // 1                  |
+    for (int j = 0; j < M; j++) {                  // 2 * M              |
+        y += h * __sinf((x + y) / a_);             // ~30 * M            |
+        x += h;                                    // M                  |
+        result[i * M + j] = y;                     // 3*M                | + M 
+    }                                              
+                                                   // euler_shared is called N (5120) times. 
+                                                   // Time_res = max(Time_mem, Time_operations)
+                                                   // Time_operations = N * (3 + 36 * M) / FLOPS = 1.4178e-4 sec = 0.000014178 sec = 0.14178 ms
+                                                   // Time_memory = (N * M * 4) / MemoryBandwidth = (102 * 10^6) / ((2 * clockRate * BusWidth) / 8) = 
+                                                   // =  (102 * 10^6) / ((2 * 7 * 10^3 * 10^6 * 192) / 8) = 3.047e-4 = 0.3047 ms
+                                                   // Time_res = max(0.14178 ms, 0.3047 m) = 0.3047 ms
+                                                   // therefore, ideal time is 0.3047 ms
+                                                   // test time is: 2.9768
 }
 
 void checkCorrectness(const std::vector<float>& a, const std::vector<float>& result_cpu, const std::vector<float>& result_gpu) {
