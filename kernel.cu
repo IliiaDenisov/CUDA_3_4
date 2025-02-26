@@ -9,8 +9,8 @@
 #include "device_launch_parameters.h"
 
 // Время выполнения на CPU: 624 ms
-// Время выполнения на CUDA простого алгоритма euler_simple: 16.9289 ms
-// Время выполнения на CUDA более сложного алгоритма euler_shared: 25.2861 ms
+// Время выполнения на CUDA простого алгоритма euler_simple: 8.73613 ms
+// Время выполнения на CUDA более сложного алгоритма euler_shared: 8.47053
 
 #define N 5120          // Количество строк (размер массива параметра a)
 #define M 5000          // Количество шагов метода Эйлера
@@ -32,12 +32,13 @@ __global__ void euler_simple(float* a, float* result, float y0, float h) {
 __global__ void euler_complex(float* a, float* result, float y0, float h) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N) return;
+
                                                  // Arithmetic oper-s  | Memory oper-s   
     float a_ = a[i];                             // 1                  |
     float x = 0.0f;                              // 1                  |
     float y = y0;                                // 1                  |
     for (int j = 0; j < M; j++) {                // 2 * M              |
-        y += h * sin((x + y) / a_);              // ~30 * M            |
+        y += h * __sinf((x + y) / a_);           // ~30 * M            |
         x += h;                                  // M                  |
         result[i * M + j] = y;                   // 3*M                | + M 
     }
@@ -48,7 +49,7 @@ __global__ void euler_complex(float* a, float* result, float y0, float h) {
                                                  // =  (102 * 10^6) / ((2 * 7 * 10^3 * 10^6 * 192) / 8) = 3.047e-4 = 0.3047 ms
                                                  // Time_res = max(0.14178 ms, 0.3047 m) = 0.3047 ms
                                                  // therefore, ideal time is 0.3047 ms
-                                                 // test time is: 25.2861 ms
+                                                 // test time is: 8.47053
 }
 
 void checkCorrectness(const std::vector<float>& a, const std::vector<float>& result_cpu, const std::vector<float>& result_gpu) {
@@ -116,17 +117,16 @@ int main() {
     cudaEventRecord(stopCUDA, 0);
     cudaEventSynchronize(stopCUDA);
     cudaEventElapsedTime(&elapsedTimeCUDA, startCUDA, stopCUDA);
-    std::cout << "CUDA simple algorithm time = " << elapsedTimeCUDA << " ms\n";
-
     cudaMemcpy(result_gpu.data(), d_result, N * M * sizeof(float), cudaMemcpyDeviceToHost);
+    std::cout << "CUDA simple algorithm time = " << elapsedTimeCUDA << " ms\n";
     checkCorrectness(a, result_cpu, result_gpu);
 
     cudaEventRecord(startCUDA, 0);
     euler_complex << <grid, block >> > (d_a, d_result, y0, h);
-    cudaMemcpy(result_gpu.data(), d_result, N * M * sizeof(float), cudaMemcpyDeviceToHost);
     cudaEventRecord(stopCUDA, 0);
     cudaEventSynchronize(stopCUDA);
     cudaEventElapsedTime(&elapsedTimeCUDA, startCUDA, stopCUDA);
+    cudaMemcpy(result_gpu.data(), d_result, N * M * sizeof(float), cudaMemcpyDeviceToHost);
     std::cout << "CUDA algorithm with shared memory usage time = " << elapsedTimeCUDA << " ms\n";
 
     checkCorrectness(a, result_cpu, result_gpu);
